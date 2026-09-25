@@ -1,0 +1,40 @@
+# Tests every push to main and every pull request on the Node versions the package supports.
+# schemas.test.mjs and package-smoke.mjs read files from the canlicapital repository (the API
+# manifest, OpenAPI document and root LICENSE), so they run in that repository's CI, where this
+# package is developed; everything else runs here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: read-all
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: node --test $(ls test/*.test.mjs | grep -v schemas.test)
+      - name: The package installs and starts from its tarball
+        run: |
+          npm pack --silent
+          mkdir -p /tmp/smoke && cd /tmp/smoke && npm init -y >/dev/null
+          npm install --ignore-scripts "$GITHUB_WORKSPACE"/canli-validation-mcp-*.tgz
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+            | timeout 20 npx --no-install canlicapital-validation-mcp | grep -q '"serverInfo"'

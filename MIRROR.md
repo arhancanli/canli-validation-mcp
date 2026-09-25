@@ -13,3 +13,7 @@ Imported from canlicapital commit `f6a62655e81ebc1383db80a1266c6d8fa987193b`.
 
 The Claude Desktop bundle attached to each release is built by `mcp/mcpb/build.sh` in the
 canlicapital repository, from its committed files.
+
+Files owned by this repository and kept across syncs: `.github/` (CI, CodeQL, OpenSSF Scorecard,
+Dependabot, and the release workflow that builds, signs and attaches the Claude Desktop bundle),
+`MIRROR.md`, `glama.json`, and the digest-pinned base image in `Dockerfile`.
