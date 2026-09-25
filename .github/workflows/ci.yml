@@ -31,10 +31,14 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=high
       - run: node --test $(ls test/*.test.mjs | grep -v schemas.test)
-      - name: The package installs and starts from its tarball
+      - name: The packed tarball installs from the lockfile and starts
         run: |
           npm pack --silent
-          mkdir -p /tmp/smoke && cd /tmp/smoke && npm init -y >/dev/null
-          npm install --ignore-scripts "$GITHUB_WORKSPACE"/canli-validation-mcp-*.tgz
+          mkdir -p /tmp/smoke && tar xzf canli-validation-mcp-*.tgz -C /tmp/smoke
+          cp package-lock.json /tmp/smoke/package/
+          cd /tmp/smoke/package
+          npm ci --omit=dev --ignore-scripts
+          bin="$(node -p "require('./package.json').bin['canlicapital-validation-mcp']")"
+          test -f "$bin"
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
-            | timeout 20 npx --no-install canlicapital-validation-mcp | grep -q '"serverInfo"'
+            | timeout 20 node "$bin" | grep -q '"serverInfo"'
