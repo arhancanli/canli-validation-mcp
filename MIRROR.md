@@ -5,8 +5,11 @@ server can be installed, scanned and reviewed on its own. It is imported from th
 directory of [arhancanli/canlicapital](https://github.com/arhancanli/canlicapital/tree/main/mcp),
 which is where changes are made and tested; this repository is updated from it.
 
-Imported from canlicapital commit `f01bc3f51038645381522fd8f14e0ff04b2015de`.
+Imported from canlicapital commit `06368bf6f51fa97be01141c8fe1b8ee5c792db83`.
 
 - npm: https://www.npmjs.com/package/canli-validation-mcp
 - MCP Registry: `io.github.arhancanli/canli-validation-mcp`
 - Hosted endpoint (no install): https://canlicapital.com/mcp
+
+The Claude Desktop bundle attached to each release is built by `mcp/mcpb/build.sh` in the
+canlicapital repository, from its committed files.
