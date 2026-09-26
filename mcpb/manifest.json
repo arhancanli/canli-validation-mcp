@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "canli-validation-mcp",
   "display_name": "Canli Validation",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Check a backtest before you trust it: deflated Sharpe, backtest overfitting (CSCV), paper-evidence and breadth, each with a recomputable receipt.",
   "long_description": "Tools over canlicapital.com's free validation API. Every result is the full API envelope, including the sentences that say what a number does not establish. Also reads a company's SEC-reported financial history. Your returns are not stored: the API keeps a SHA-256 hash of the input and the verdict.",
   "author": {
@@ -27,7 +27,8 @@
       ],
       "env": {
         "CANLI_KEY": "${user_config.api_key}",
-        "CANLI_LOCAL": "${user_config.local_only}"
+        "CANLI_LOCAL": "${user_config.local_only}",
+        "CANLI_TOOLSETS": "${user_config.toolsets}"
       }
     }
   },
@@ -103,6 +104,13 @@
       "title": "Private local mode",
       "description": "Run the validators on this computer. Nothing about your series is sent to canlicapital.com and no receipt is stored.",
       "default": false,
+      "required": false
+    },
+    "toolsets": {
+      "type": "string",
+      "title": "Toolsets",
+      "description": "Which tools to list: validate, receipts, company, status (comma-separated), or all. Fewer tools send fewer tokens to the model on every turn.",
+      "default": "all",
       "required": false
     }
   },
