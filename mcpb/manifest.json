@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "canli-validation-mcp",
   "display_name": "Canli Validation",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Check a backtest before you trust it: deflated Sharpe, backtest overfitting (CSCV), paper-evidence and breadth, each with a recomputable receipt.",
   "long_description": "Tools over canlicapital.com's free validation API. Every result is the full API envelope, including the sentences that say what a number does not establish. Also reads a company's SEC-reported financial history. Your returns are not stored: the API keeps a SHA-256 hash of the input and the verdict.",
   "author": {
@@ -55,6 +55,26 @@
     {
       "name": "validate_track_record",
       "description": "Minimum track record length to clear a benchmark Sharpe"
+    },
+    {
+      "name": "validate_backtest_length",
+      "description": "Minimum backtest length for N trials, or the trials a backtest's years allow"
+    },
+    {
+      "name": "validate_haircut_sharpe",
+      "description": "Haircut Sharpe ratio for the number of tests run"
+    },
+    {
+      "name": "validate_luck_trials",
+      "description": "Skill-less trials needed to reach a Sharpe by luck"
+    },
+    {
+      "name": "audit_backtest",
+      "description": "Deflated Sharpe, track record and overfitting on one series in one call"
+    },
+    {
+      "name": "verify_receipt",
+      "description": "Check a receipt's signature offline against the published key"
     },
     {
       "name": "get_receipt",

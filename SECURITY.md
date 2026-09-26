@@ -11,7 +11,10 @@ report. The current `main` branch and the latest npm release are supported.
 
 `npx -y canli-validation-mcp` runs `src/server.mjs` over stdio. It:
 
-- reads one file, its own `package.json`, to report its version;
+- reads its own `package.json`, to report its version, and a file only when a call to
+  `audit_backtest` names one (`returns_file`, `variants_file`): it parses numbers from that file,
+  up to 5 MB, and never returns the file's text; error messages name rows and columns by position,
+  never by content. The hosted endpoint refuses file paths;
 - sends requests only to `CANLI_API_BASE` (default `https://canlicapital.com`), and only when a
   tool is called;
 - writes no files, keeps no local cache, sends no telemetry, and logs only a fatal startup error
@@ -52,6 +55,8 @@ server-side role. The company financial history tool reads a public release and 
 
 ## What a receipt is not
 
-A receipt is content-hashed and reproducible from the open-source core it names. It is not signed,
-and it says nothing about the data source, costs, survivorship or lookahead in how your series was
-built.
+A receipt is content-hashed, reproducible from the open-source core it names, and signed with
+Ed25519 by a key published at https://canlicapital.com/.well-known/canli-receipt-keys.json; the
+`verify_receipt` tool checks the signature offline against the copy of that key in this package. A
+valid signature proves canlicapital.com computed that output from that input with that code. It says
+nothing about the data source, costs, survivorship or lookahead in how your series was built.
