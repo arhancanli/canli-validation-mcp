@@ -11,10 +11,18 @@ import { pathToFileURL } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { computeLocally } from "./local.mjs";
+import { readMatrixFile, readSeriesFile } from "./series-file.mjs";
+import { verifyReceipt } from "./local/js/receipt-statement.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   breadthInput,
   trackRecordInput,
+  auditBacktestInput,
+  verifyReceiptToolShape,
+  backtestLengthInput,
+  haircutSharpeInput,
+  luckTrialsInput,
+  auditBacktestToolShape,
   companyHistoryInput,
   companyHistoryToolShape,
   deflatedSharpeInput,
@@ -58,7 +66,7 @@ export function configuredLocal(value) {
   return v === "1" || v?.toLowerCase() === "true";
 }
 
-export function createSession({ base, fetchImpl, envKey, timeoutMs = REQUEST_TIMEOUT_MS, hosted, local } = {}) {
+export function createSession({ base, fetchImpl, envKey, timeoutMs = REQUEST_TIMEOUT_MS, hosted, local, fullEnvelope, receiptKeys } = {}) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new Error("Request timeout must be a positive integer");
   return {
     base: base ?? process.env.CANLI_API_BASE ?? DEFAULT_BASE,
@@ -70,6 +78,9 @@ export function createSession({ base, fetchImpl, envKey, timeoutMs = REQUEST_TIM
     // so instead of issuing a key the next stateless request would never see.
     hosted: hosted ?? undefined,
     local: local ?? configuredLocal(process.env.CANLI_LOCAL),
+    fullEnvelope: fullEnvelope ?? configuredFullEnvelope(process.env.CANLI_FULL_ENVELOPE),
+    // Tests pass their own keys; everyone else verifies against the bundled published keys.
+    receiptKeys: receiptKeys ?? undefined,
   };
 }
 
@@ -109,6 +120,30 @@ const asText = (envelope, failed = false) => ({
   ...(envelope && typeof envelope === "object" && !Array.isArray(envelope) ? { structuredContent: envelope } : {}),
   ...(failed ? { isError: true } : {}),
 });
+
+// A validation result as the model reads it: the answer, the sentences saying what it does not
+// establish, and the receipt that holds the rest. Metadata (schema, endpoint, timestamps, claim and
+// capital class, human page), the source hashes and the quota sentence are about the service, not
+// the answer; they stay in the stored receipt (get_receipt) and service_status, and
+// CANLI_FULL_ENVELOPE=1 returns every field. On a result this cuts the text roughly in half.
+const QUOTA_SENTENCE = /^Quotas:/;
+
+export function compactEnvelope(envelope) {
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) return envelope;
+  const out = {};
+  if (envelope.computed) { out.computed = envelope.computed; out.note = envelope.note; }
+  if ("data" in envelope) out.data = envelope.data;
+  if (envelope.error) out.error = envelope.error;
+  if (Array.isArray(envelope.limits)) out.limits = envelope.limits.filter((s) => !QUOTA_SENTENCE.test(s));
+  if ("receipt" in envelope) out.receipt = envelope.receipt ? { id: envelope.receipt.id, url: envelope.receipt.url } : null;
+  return out;
+}
+
+export function configuredFullEnvelope(value) {
+  return value === "1" || value === "true";
+}
+
+const validationText = (session, { envelope, failed }) => asText(session.fullEnvelope ? envelope : compactEnvelope(envelope), failed);
 
 // A history's observations as one header and one row each, instead of every field name repeated
 // on every observation. The column order is fixed so a row can be read without its keys; a unit
@@ -171,37 +206,157 @@ export async function toolValidateDeflatedSharpe(session, args) {
         "or a return series (returns, periods_per_year, effective_independent_trials, cross_trial_sharpe_sd_annualized), never a mix of both and never neither.",
     );
   }
-  if (session.local) { const local = computeLocally("validate_deflated_sharpe", parsed.data); return asText(local.envelope, local.failed); }
+  if (session.local) { const local = computeLocally("validate_deflated_sharpe", parsed.data); return validationText(session, local); }
   const response = await callApi(session, { path: "/api/v1/validate/deflated-sharpe", method: "POST", body: parsed.data });
-  return asText(response.envelope, response.failed);
+  return validationText(session, response);
 }
 
 export async function toolValidateOverfitting(session, args) {
   const body = parseOrThrow(overfittingInput, args, "validate_overfitting");
-  if (session.local) { const local = computeLocally("validate_overfitting", body); return asText(local.envelope, local.failed); }
+  if (session.local) { const local = computeLocally("validate_overfitting", body); return validationText(session, local); }
   const response = await callApi(session, { path: "/api/v1/validate/overfitting", method: "POST", body });
-  return asText(response.envelope, response.failed);
+  return validationText(session, response);
 }
 
 export async function toolValidatePaperEvidence(session, args) {
   const body = parseOrThrow(paperEvidenceInput, args, "validate_paper_evidence");
-  if (session.local) { const local = computeLocally("validate_paper_evidence", body); return asText(local.envelope, local.failed); }
+  if (session.local) { const local = computeLocally("validate_paper_evidence", body); return validationText(session, local); }
   const response = await callApi(session, { path: "/api/v1/validate/paper-evidence", method: "POST", body });
-  return asText(response.envelope, response.failed);
+  return validationText(session, response);
 }
 
 export async function toolValidateBreadth(session, args) {
   const body = parseOrThrow(breadthInput, args, "validate_breadth");
-  if (session.local) { const local = computeLocally("validate_breadth", body); return asText(local.envelope, local.failed); }
+  if (session.local) { const local = computeLocally("validate_breadth", body); return validationText(session, local); }
   const response = await callApi(session, { path: "/api/v1/validate/breadth", method: "POST", body });
-  return asText(response.envelope, response.failed);
+  return validationText(session, response);
 }
 
 export async function toolValidateTrackRecord(session, args) {
   const body = parseOrThrow(trackRecordInput, args, "validate_track_record");
-  if (session.local) { const local = computeLocally("validate_track_record", body); return asText(local.envelope, local.failed); }
+  if (session.local) { const local = computeLocally("validate_track_record", body); return validationText(session, local); }
   const response = await callApi(session, { path: "/api/v1/validate/track-record", method: "POST", body });
-  return asText(response.envelope, response.failed);
+  return validationText(session, response);
+}
+
+export async function toolValidateBacktestLength(session, args) {
+  const body = parseOrThrow(backtestLengthInput, args, "validate_backtest_length");
+  if (session.local) { const local = computeLocally("validate_backtest_length", body); return validationText(session, local); }
+  const response = await callApi(session, { path: "/api/v1/validate/backtest-length", method: "POST", body });
+  return validationText(session, response);
+}
+
+export async function toolValidateHaircutSharpe(session, args) {
+  const body = parseOrThrow(haircutSharpeInput, args, "validate_haircut_sharpe");
+  if (session.local) { const local = computeLocally("validate_haircut_sharpe", body); return validationText(session, local); }
+  const response = await callApi(session, { path: "/api/v1/validate/haircut-sharpe", method: "POST", body });
+  return validationText(session, response);
+}
+
+export async function toolValidateLuckTrials(session, args) {
+  const body = parseOrThrow(luckTrialsInput, args, "validate_luck_trials");
+  if (session.local) { const local = computeLocally("validate_luck_trials", body); return validationText(session, local); }
+  const response = await callApi(session, { path: "/api/v1/validate/luck-trials", method: "POST", body });
+  return validationText(session, response);
+}
+
+// One validator, run the same way its own tool runs it: on this machine in local mode, otherwise
+// through the API (one validation of quota, one receipt).
+async function runValidator(session, tool, path, body) {
+  if (session.local) return computeLocally(tool, body);
+  return callApi(session, { path, method: "POST", body });
+}
+
+const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// audit_backtest: deflated Sharpe from the series, then the minimum track record length from the
+// Sharpe, skew and kurtosis that check derived, then (with variants) CSCV overfitting. Each check
+// keeps its envelope and receipt; the limits every envelope repeats are stated once at the top.
+// A refused later check (for example a Sharpe that does not exceed the benchmark) is reported as
+// that check's error, not as a failed audit; the audit fails only when the first check does.
+export async function toolAuditBacktest(session, args) {
+  const input = parseOrThrow(auditBacktestInput, args, "audit_backtest");
+  if ((input.returns_file || input.variants_file) && session.hosted) {
+    throw new Error("audit_backtest: the hosted endpoint cannot read files on your machine; send returns (and variants) as numbers, or run the server locally with npx -y canli-validation-mcp.");
+  }
+  const returnsRead = input.returns_file ? readSeriesFile(input.returns_file, input.returns_column) : null;
+  const variantsRead = input.variants_file ? readMatrixFile(input.variants_file) : null;
+  const returns = input.returns ?? returnsRead.values;
+  const variants = input.variants ?? variantsRead?.matrix;
+  const { periods_per_year, effective_independent_trials, cross_trial_sharpe_sd_annualized } = input;
+  const dsr = await runValidator(session, "validate_deflated_sharpe", "/api/v1/validate/deflated-sharpe", {
+    returns, periods_per_year, effective_independent_trials, cross_trial_sharpe_sd_annualized,
+  });
+  if (dsr.failed) return validationText(session, { envelope: dsr.envelope, failed: true });
+  const derived = dsr.envelope?.data?.derived_inputs ?? {};
+  const trackBody = {
+    observed_sharpe_annualized: derived.observed_sharpe_annualized,
+    periods_per_year,
+    skew: derived.skew,
+    non_excess_kurtosis: derived.non_excess_kurtosis,
+    observations: derived.observations,
+    ...(input.benchmark_sharpe_annualized !== undefined ? { benchmark_sharpe_annualized: input.benchmark_sharpe_annualized } : {}),
+    ...(input.confidence !== undefined ? { confidence: input.confidence } : {}),
+  };
+  const track = await runValidator(session, "validate_track_record", "/api/v1/validate/track-record", trackBody);
+  const overfit = variants
+    ? await runValidator(session, "validate_overfitting", "/api/v1/validate/overfitting", {
+        matrix: variants,
+        ...(input.n_splits !== undefined ? { n_splits: input.n_splits } : {}),
+      })
+    : null;
+  const shape = (e) => (session.fullEnvelope ? e : compactEnvelope(e));
+  const envelopes = { deflated_sharpe: shape(dsr.envelope), track_record: shape(track.envelope), ...(overfit ? { overfitting: shape(overfit.envelope) } : {}) };
+  const limits = envelopes.deflated_sharpe?.limits;
+  const shared = Object.values(envelopes).every((e) => sameJson(e?.limits, limits));
+  const checks = Object.fromEntries(
+    Object.entries(envelopes).map(([name, e]) => [name, shared ? Object.fromEntries(Object.entries(e).filter(([k]) => k !== "limits")) : e]),
+  );
+  const readings = Object.fromEntries(
+    Object.entries(envelopes).map(([name, e]) => [name, e?.data?.plain_reading ?? e?.error?.message ?? null]),
+  );
+  return asText({
+    schema: "canli.audit.v1",
+    note: "Each check is its validator's own result and receipt, side by side. The audit does not grade the strategy.",
+    ...(shared ? { limits } : {}),
+    readings,
+    checks,
+    ...(input.returns_file || input.variants_file
+      ? { source: {
+          ...(returnsRead ? { returns_file: input.returns_file, observations: returns.length, ...(returnsRead.skipped.length ? { skipped_row_counter_columns: returnsRead.skipped } : {}) } : {}),
+          ...(variantsRead ? { variants_file: input.variants_file, variants: variants[0].length, periods: variants.length, ...(variantsRead.skipped.length ? { skipped_variant_row_counter_columns: variantsRead.skipped } : {}) } : {}),
+        } }
+      : {}),
+    ...(variants ? {} : { not_run: { overfitting: "Send variants or variants_file (every variant's returns) to add the overfitting check." } }),
+  });
+}
+
+// The public keys canlicapital.com signs receipts with, as published at
+// /.well-known/canli-receipt-keys.json when this package was built; a test keeps the two identical.
+const RECEIPT_KEYS = JSON.parse(readFileSync(new URL("./receipt-keys.json", import.meta.url), "utf8"));
+
+// verify_receipt: every check is local; only fetching a receipt by id touches the network.
+export async function toolVerifyReceipt(session, args) {
+  const input = parseOrThrow(verifyReceiptToolShape, args, "verify_receipt");
+  if ((input.id === undefined) === (input.receipt === undefined)) throw new Error("verify_receipt: send exactly one of id or receipt");
+  let data = input.receipt;
+  if (input.id !== undefined) {
+    const response = await callApi(session, { path: `/api/v1/receipts/${input.id}` });
+    if (response.failed) return asText(response.envelope, true);
+    data = response.envelope?.data;
+  }
+  const endpoint = String(data?.endpoint ?? "").replace(/^\/api\/v1\//, "");
+  const result = verifyReceipt({ ...data, endpoint }, session.receiptKeys ?? RECEIPT_KEYS.keys);
+  return asText({
+    receipt_id: data?.id ?? null,
+    valid: result.valid,
+    checks: result.checks,
+    key_id: result.key_id,
+    keys: "bundled with this package; published at https://canlicapital.com/.well-known/canli-receipt-keys.json",
+    meaning: result.valid
+      ? "canlicapital.com signed this exact output for this exact input, computed by the source files whose hashes the receipt lists. It says nothing about how the input series was built."
+      : "At least one check failed: do not treat this receipt as issued by canlicapital.com for this content.",
+  });
 }
 
 export async function toolGetReceipt(session, args) {
@@ -352,9 +507,34 @@ export function registerTools(server, session) {
     (args) => toolValidateTrackRecord(session, args),
   );
   server.registerTool(
+    "validate_backtest_length",
+    { title: "Minimum backtest length", annotations: { title: "Minimum backtest length", ...WRITES_RECEIPT }, description: TOOL_DESCRIPTIONS.validate_backtest_length, inputSchema: backtestLengthInput },
+    (args) => toolValidateBacktestLength(session, args),
+  );
+  server.registerTool(
+    "validate_haircut_sharpe",
+    { title: "Haircut Sharpe ratio", annotations: { title: "Haircut Sharpe ratio", ...WRITES_RECEIPT }, description: TOOL_DESCRIPTIONS.validate_haircut_sharpe, inputSchema: haircutSharpeInput },
+    (args) => toolValidateHaircutSharpe(session, args),
+  );
+  server.registerTool(
+    "validate_luck_trials",
+    { title: "Luck-equivalent trials", annotations: { title: "Luck-equivalent trials", ...WRITES_RECEIPT }, description: TOOL_DESCRIPTIONS.validate_luck_trials, inputSchema: luckTrialsInput },
+    (args) => toolValidateLuckTrials(session, args),
+  );
+  server.registerTool(
+    "audit_backtest",
+    { title: "Audit a backtest", annotations: { title: "Audit a backtest", ...WRITES_RECEIPT }, description: TOOL_DESCRIPTIONS.audit_backtest, inputSchema: auditBacktestToolShape },
+    (args) => toolAuditBacktest(session, args),
+  );
+  server.registerTool(
     "get_receipt",
     { title: "Get a receipt", annotations: { title: "Get a receipt", ...READ_ONLY }, description: TOOL_DESCRIPTIONS.get_receipt, inputSchema: getReceiptInput },
     (args) => toolGetReceipt(session, args),
+  );
+  server.registerTool(
+    "verify_receipt",
+    { title: "Verify a receipt", annotations: { title: "Verify a receipt", ...READ_ONLY }, description: TOOL_DESCRIPTIONS.verify_receipt, inputSchema: verifyReceiptToolShape },
+    (args) => toolVerifyReceipt(session, args),
   );
   server.registerTool(
     "service_status",
@@ -440,6 +620,9 @@ export const RESOURCE_TEXT = Object.freeze({
     "",
     "- Deflated Sharpe ratio: Bailey and López de Prado, \"The Deflated Sharpe Ratio\", Journal of Portfolio Management, 2014. Reproduces the paper's worked example (pages 9 and 10) to its four printed decimals, checked in CI.",
     "- Minimum track record length and probabilistic Sharpe against a benchmark: Bailey and López de Prado, \"The Sharpe Ratio Efficient Frontier\", Journal of Risk, 2012. Reproduces the paper's worked examples (page 11), checked in CI.",
+    "- Minimum backtest length: Bailey, Borwein, López de Prado and Zhu, \"Pseudo-Mathematics and Financial Charlatanism\", Notices of the American Mathematical Society, 2014. Reproduces the paper's statements exactly (the best of 10 trials at 1.57; 5 years allow at most 45 trials, 2 years at most 7), checked in CI.",
+    "- Haircut Sharpe ratio: Harvey and Liu, \"Backtesting\", Journal of Portfolio Management, 2015. Agrees with the authors' own Haircut_SR.m on every deterministic (Bonferroni) output to 1e-9; Holm and BHY agree with R's p.adjust; the Student t with R's pt and qt. Checked in CI.",
+    "- Luck-equivalent trials: Canli Capital's statistic, built from the Student t null of the Sharpe's t-statistic, the Sidak best-of-N probability and the expected maximum of Bailey, Borwein, López de Prado and Zhu (2014). Calibrated by Monte Carlo in CI: correct size for normal and Student t4 returns; too generous for negatively skewed returns (with 252 observations, a nominal 5 percent test rejected 10.8 percent of skill-less searches at skew -1.3).",
     "- Probability of backtest overfitting by CSCV: Bailey, Borwein, López de Prado and Zhu, \"The Probability of Backtest Overfitting\", Journal of Computational Finance, 2017. Agrees with the CRAN package pbo on PBO and on every logit, after its documented rank convention, checked in CI.",
     "- Source code: https://github.com/arhancanli/canli-validation-mcp and https://github.com/arhancanli/canlicapital",
   ].join("\n"),

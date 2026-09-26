@@ -1,12 +1,18 @@
 # canli-validation-mcp
 
+[![npm](https://img.shields.io/npm/v/canli-validation-mcp)](https://www.npmjs.com/package/canli-validation-mcp)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/arhancanli/canli-validation-mcp/badge)](https://scorecard.dev/viewer/?uri=github.com/arhancanli/canli-validation-mcp)
+[![Glama score](https://glama.ai/mcp/servers/arhancanli/canli-validation-mcp/badges/score.svg)](https://glama.ai/mcp/servers/arhancanli/canli-validation-mcp)
+
 An MCP (Model Context Protocol) server over canlicapital.com's free, keyed validation API. It
-gives a coding agent nine tools: issue a free key, run the five validators (deflated Sharpe,
-CSCV overfitting, paper-evidence conformance, breadth ceiling, minimum track record length),
-fetch a stored receipt, read service status, and read a company's reported financial history
-from SEC filings. Every tool returns the full API envelope as its result text, success or error,
-so the agent cannot see a number without the sentences beside it that say what the number does
-not establish.
+gives a coding agent fourteen tools: issue a free key, run the eight validators (deflated Sharpe,
+CSCV overfitting, paper-evidence conformance, breadth ceiling, minimum track record length,
+minimum backtest length, haircut Sharpe ratio, luck-equivalent trials),
+audit one backtest with three of them in a single call, fetch a stored receipt, verify a
+receipt's signature offline, read service status, and read a company's reported financial history
+from SEC filings. Every validation result carries, beside the number, the sentences that say what
+it does not establish and the receipt that records it, success or error, so the agent cannot see a
+number without its limits.
 
 This package is published to npm as [`canli-validation-mcp`](https://www.npmjs.com/package/canli-validation-mcp).
 Also listed on the official MCP Registry (`io.github.arhancanli/canli-validation-mcp`) and
@@ -16,11 +22,18 @@ test this package itself; see "Local checkout" near the bottom.
 This README describes the version in `package.json`. Unversioned `npx` runs npm's latest
 release; `npx -y canli-validation-mcp@<version>` pins one.
 
+## How well agents use it
+
+A fixed benchmark gives models these tools and scores whether they pick the right one and return
+the right answer, against ground truth computed from the same checked code. Results for three
+models, with every run recorded, are in
+[`bench/agent/README.md`](https://github.com/arhancanli/canlicapital/blob/main/mcp/bench/agent/README.md).
+
 ## What the API is (and is not)
 
 The engine is the product. The service runs your submitted numbers through the same honesty
 arithmetic canlicapital.com's own paper record runs on itself and hands back a verdict anyone can
-recompute from the receipt. It does not accept market data, does not sign receipts, does not
+recompute from the receipt. It signs every receipt, does not accept market data, does not
 grade a strategy, and never saw your data source, its costs, or any lookahead in how a series was
 built. See `docs/superpowers/specs/2026-09-05-developer-key-validation-api-design.md` in the main
 repository for the full design.
@@ -35,6 +48,11 @@ repository for the full design.
 | `validate_paper_evidence` | `POST /api/v1/validate/paper-evidence` | yes |
 | `validate_breadth` | `POST /api/v1/validate/breadth` | yes |
 | `validate_track_record` | `POST /api/v1/validate/track-record` | yes |
+| `validate_backtest_length` | `POST /api/v1/validate/backtest-length` | yes |
+| `validate_haircut_sharpe` | `POST /api/v1/validate/haircut-sharpe` | yes |
+| `validate_luck_trials` | `POST /api/v1/validate/luck-trials` | yes |
+| `audit_backtest` | the deflated Sharpe, track record and, with `variants`, overfitting routes, one validation each | yes |
+| `verify_receipt` | `GET /api/v1/receipts/{id}` when given an id; the checks run locally | no |
 | `get_receipt` | `GET /api/v1/receipts/{id}` | no |
 | `service_status` | `GET /api/v1/validate/status` | no |
 | `company_financial_history` | `GET /company-data/{cik}.json` (a ticker resolves through `GET /api/v1/company-tickers.json`) | no |
@@ -58,6 +76,24 @@ keeps its filing accession, form, filed date and unit, and the result carries th
 original SEC response and the record's own boundary sentence: these are accounting values as
 reported to the SEC, not market prices, returns or a recommendation. Companies and concepts
 outside the current release return an error with the available concepts listed.
+
+## Auditing a backtest in one call
+
+`audit_backtest` takes one strategy's return series, the number of variants tried and their Sharpe
+dispersion, and optionally every variant's returns. It runs `validate_deflated_sharpe` on the
+series, then `validate_track_record` on the Sharpe, skew and kurtosis that check derived, then,
+with `variants`, `validate_overfitting`. Each check is exactly what its own tool returns, with its
+own receipt; the boundary sentences they share are stated once. A check that refuses (a Sharpe
+that cannot beat the benchmark has no minimum track record) is reported as that check's error.
+The audit adds no grade of its own. Through the API it uses one validation per check.
+
+When the server runs on your machine, `returns_file` and `variants_file` take the path of the
+backtest's output instead of the numbers: a CSV (comma, semicolon or tab separated, with or without
+a header; date and label columns are ignored, an unnamed or counting index column is skipped and
+reported) or a JSON array. `returns_column` picks the column when there are several. Only the
+numbers are read; the hosted endpoint refuses file paths. An agent copying a long series into a
+call can drop values, and the copy costs tokens; in our agent benchmark, reading the file instead
+took three audit questions from 4 of 9 to 8 of 9 answered correctly on gpt-5.4-mini.
 
 ## Prompts, resources and structured results
 
@@ -96,7 +132,8 @@ an array of objects.
 |---|---|---|
 | `CANLI_API_BASE` | `https://canlicapital.com` | Where the API lives. Point it at a preview deployment for testing. |
 | `CANLI_KEY` | unset | A key already issued from `POST /api/v1/keys`. When set, `get_key` sends no request and reports the key is already configured; every other tool sends it as `Authorization: Bearer <key>`. |
-| `CANLI_LOCAL` | unset | `1` or `true` runs the five validators on this machine (private local mode, below): no key, no network, no receipt. |
+| `CANLI_FULL_ENVELOPE` | unset | `1` or `true` returns each validation's full API envelope instead of the compact result (below). |
+| `CANLI_LOCAL` | unset | `1` or `true` runs the eight validators on this machine (private local mode, below): no key, no network, no receipt. |
 
 If `CANLI_KEY` is not set and local mode is off, call `get_key` once per session before the validators. The key it
 returns lives only in this process's memory for the life of the session; it is not written to
@@ -165,7 +202,7 @@ Run `claude mcp list` to confirm it is registered, and `claude mcp remove canli`
 
 ## Private local mode
 
-Set `CANLI_LOCAL=1` and the five validators run on your machine: nothing about the series you
+Set `CANLI_LOCAL=1` and the eight validators run on your machine: nothing about the series you
 submit is sent to canlicapital.com, no key is needed, and no receipt is stored. The computation is
 the API's own, shipped byte for byte in `src/local` (a test fails if it drifts), so a local result
 equals the hosted one; it names no receipt id because none was made.
@@ -211,7 +248,7 @@ const result = await client.callTool({
     cross_trial_sharpe_sd_annualized: 0.5,
   },
 });
-console.log(result.content[0].text); // the full envelope, including limits and receipt.url
+console.log(result.content[0].text); // the answer, its limits and its receipt
 
 await client.close();
 ```
@@ -231,8 +268,16 @@ Every envelope this server returns carries these sentences, verbatim, from the A
   request, 20000 observations per series, 200 variants per matrix.
 
 Each tool's description also states one of these sentences, so an agent sees the boundary before
-it calls the tool, not only after. No tool in this server strips `limits` or `receipt.url` from
-a response; the full envelope is always the result text.
+it calls the tool, not only after.
+
+## Compact results (tokens)
+
+A validation result is the answer (`data`), the sentences above except the quota line, and the
+receipt's id and URL; an error keeps its error. The rest of the API envelope (schema, endpoint,
+timestamps, claim and capital class, the human page, the source-file hashes and the quota line)
+describes the service rather than the answer, and an agent pays for every token of it on every
+call. It stays in the stored receipt, which `get_receipt` returns in full, and in `service_status`.
+On a breadth result this is about half the text. Set `CANLI_FULL_ENVELOPE=1` to receive every field.
 
 ## Local checkout
 
