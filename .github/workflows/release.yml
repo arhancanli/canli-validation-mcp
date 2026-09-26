@@ -3,11 +3,19 @@
 # attaches the bundle and its signature bundle to the release.
 #
 # Verify a download:  gh attestation verify canli-validation.mcpb --repo arhancanli/canli-validation-mcp
+#
+# Run by hand (workflow_dispatch) with a tag to build and sign the bundle of a release published
+# before this workflow existed; the bundle is rebuilt from that tag's committed files.
 name: Release bundle
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and sign, for example v0.4.0
+        required: true
 
 permissions: read-all
 
@@ -19,12 +27,14 @@ jobs:
       id-token: write
       attestations: write
     env:
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: The tag is a release tag
+        run: '[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a release tag: $TAG"; exit 1; }'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -52,4 +62,6 @@ jobs:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: |
           cp "$BUNDLE" dist/canli-validation.mcpb.sigstore.json
-          gh release upload "$TAG" dist/*.mcpb dist/SHA256SUMS.txt dist/canli-validation.mcpb.sigstore.json --clobber --repo "$GITHUB_REPOSITORY"
+          # The same signed SLSA provenance as a bare in-toto DSSE envelope, one per line.
+          jq -c '.dsseEnvelope' "$BUNDLE" > dist/canli-validation.mcpb.intoto.jsonl
+          gh release upload "$TAG" dist/*.mcpb dist/SHA256SUMS.txt dist/canli-validation.mcpb.sigstore.json dist/canli-validation.mcpb.intoto.jsonl --clobber --repo "$GITHUB_REPOSITORY"
