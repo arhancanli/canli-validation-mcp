@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.10.1 (2026-09-28)
+
+- A missing value is refused by its position instead of being read as zero. JSON has no NaN, so a
+  gap arrives as `null`, and the API read `null` as 0: in a return series it became a period of
+  zero return (a 60-period series with one null moved its Sharpe from 5.19 to 5.56), in a variants
+  matrix a zero cell, and in `other_sharpe_ratios_annualized` a Sharpe of 0. A malformed string was
+  dropped without a word. Now `returns[5] is null, not a finite number` (and `matrix[3][0]`,
+  `other_sharpe_ratios_annualized[1]`) comes back as an error; numeric strings still read as
+  numbers. The MCP tools already refused these through their input schemas; this closes the same
+  gap for direct API calls.
+- A matrix whose rows differ in length is refused, naming the row.
+- The receipts of `overfitting` and `haircut-sharpe` name `js/moments-core.js`, and those of
+  `reality-check` name `api/_lib/limits.js`, the code each now runs.
+
+## 0.10.0 (2026-09-28)
+
+- `validate_reality_check`: data-snooping tests on every variant a search tried. Hansen's SPA
+  (2005) gives the chance that the best variant's studentized excess return is this good when no
+  variant has an edge, with lower and upper bounds and its Monte Carlo error; White's Reality
+  Check (2000) asks the same without studentizing; Romano and Wolf's StepM (2005) names the
+  variants that beat the benchmark with the familywise error held at `alpha`. One seeded stationary
+  bootstrap feeds all three, so a result reproduces exactly from its inputs. Send `matrix`, or
+  `matrix_file` (read on your machine, then sent as numbers), and an optional `benchmark` series.
+  Works in local mode and on the hosted endpoint, and is `POST /api/v1/validate/reality-check` on
+  the API.
+- Checked against independent implementations: on three fixed-seed cases the p-values agree with
+  Python's `arch` 8.0 and with a numpy transcription of Hansen's formulas within Monte Carlo error,
+  the SPA statistic to nine digits, and the StepM sets match `arch`'s. On pure noise, a 5% SPA
+  rejects at most 10% of 200 searches in CI.
+- A matrix cell that is not a number (JSON null, a string) is refused with its row and column,
+  never read as zero.
+
+## 0.9.1 (2026-09-28)
+
+Breadth answers are exact where two were wrong without warning:
+
+- `sleeves_required` is solved in closed form at any size. It searched only up to 500 sleeves, so a
+  reachable target that needs more was called unreachable: a target of 50 from sleeves of Sharpe 1
+  at correlation 0.0001 needs 3,333 sleeves, and now says so.
+- A negative average correlation caps the sleeve count (`1 + (N - 1) * rho` must stay positive), so
+  it caps the book Sharpe too. The result gives `max_sleeves` and the ceiling reached there
+  (`ceiling_kind: "maximum"`): at -0.3, 4 sleeves of Sharpe 1 reach 6.32. It was reported as having
+  no ceiling. `ceiling_kind` is `limit` for a positive correlation (approached, never reached) and
+  `unbounded` only at zero. A sleeve count above `max_sleeves` is refused, naming the cap.
+- The target note states the sleeve count it found.
+
+The same code runs the API, local mode and the calculator at canlicapital.com/tools/breadth.
+
 ## 0.9.0 (2026-09-27)
 
 - Server instructions: `initialize` carries a short, byte-stable paragraph on which tool to call
