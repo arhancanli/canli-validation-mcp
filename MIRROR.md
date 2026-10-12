@@ -5,7 +5,7 @@ server can be installed, scanned and reviewed on its own. It is imported from th
 directory of [arhancanli/canlicapital](https://github.com/arhancanli/canlicapital/tree/main/mcp),
 which is where changes are made and tested; this repository is updated from it.
 
-Imported from canlicapital commit `51b1d91929eb9421e3931b23a3fe27eb7d40205a` (tag `mcp-v0.13.0`).
+Imported from canlicapital commit `cf91aa45241b5efef734e29263f87ab6cbf39472` (tag `mcp-v0.14.0`).
 
 - npm: https://www.npmjs.com/package/canli-validation-mcp
 - MCP Registry: `io.github.arhancanli/canli-validation-mcp`
