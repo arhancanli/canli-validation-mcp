@@ -1,0 +1,8 @@
+
+# Agent tooling state written into the working directory; never part of the package.
+.claude-flow/
+.swarm/
+ruvector.db
+agentdb*
+*.rvf
+*.rvf.*

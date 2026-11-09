@@ -16,4 +16,4 @@ canlicapital repository, from its committed files.
 
 Files owned by this repository and kept across syncs: `.github/` (CI, CodeQL, OpenSSF Scorecard,
 Dependabot, and the release workflow that builds, signs and attaches the Claude Desktop bundle),
-`MIRROR.md`, `glama.json`, and the digest-pinned base image in `Dockerfile`.
+`.gitignore`, `MIRROR.md`, `glama.json`, and the digest-pinned base image in `Dockerfile`.
